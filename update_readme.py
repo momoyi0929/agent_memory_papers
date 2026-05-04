@@ -1,71 +1,64 @@
 import os
 import re
-from collections import Counter
 
-# --- 配置区 ---
-# 匹配文件名中的会议关键字（不区分大小写）
-CONFS = ["ICLR", "NeurIPS", "ACL", "EMNLP", "CVPR", "ICCV", "AAAI", "IJCAI", "SIGGRAPH", "UIST", "CoRL", "Arxiv"]
-# 需要统计的文件夹列表（排除隐藏目录）
-EXCLUDE_DIRS = {'.git', '.github', 'scripts', 'images'}
+# --- 配置 ---
+# 排除不需要统计的文件夹
+EXCLUDE_DIRS = {'.git', '.github', 'scripts', 'images', 'figures'}
 
-def get_paper_info():
+def count_papers():
     folder_stats = {}
-    conf_list = []
+    total_papers = 0
     
-    # 遍历当前目录下所有文件夹
+    # 遍历当前目录
     for root, dirs, files in os.walk('.'):
+        # 计算相对路径
         folder_name = os.path.relpath(root, '.')
-        if folder_name == '.' or any(ex in folder_name for ex in EXCLUDE_DIRS):
+        
+        # 跳过根目录和排除列表中的目录
+        if folder_name == '.' or any(ex in folder_name.split(os.sep) for ex in EXCLUDE_DIRS):
             continue
             
-        # 统计 pdf 数量（你也可以改成统计 .md）
-        papers = [f for f in files if f.lower().endswith('.pdf')]
-        if papers:
-            folder_stats[folder_name] = len(papers)
-            for p in papers:
-                # 匹配文件名中的会议信息
-                found = False
-                for c in CONFS:
-                    if c.lower() in p.lower():
-                        conf_list.append(c)
-                        found = True
-                        break
-                if not found:
-                    conf_list.append("Others/Preprint")
-                    
-    return folder_stats, Counter(conf_list)
+        # 统计以 .pdf 结尾的文件
+        pdf_count = len([f for f in files if f.lower().endswith('.pdf')])
+        
+        if pdf_count > 0:
+            folder_stats[folder_name] = pdf_count
+            total_papers += pdf_count
+            
+    return folder_stats, total_papers
 
-def update_readme(folder_stats, conf_stats):
+def update_readme(stats, total):
+    if not os.path.exists("README.md"):
+        print("❌ 未找到 README.md 文件")
+        return
+
     with open("README.md", "r", encoding="utf-8") as f:
         content = f.read()
 
-    # 构建统计表格
-    stats_text = "<!-- STATS_START -->\n\n"
+    # 构建 Markdown 表格
+    table_content = "<!-- STATS_START -->\n"
+    table_content += f"**📊 Total Papers: {total}**\n\n"
+    table_content += "| Folder Name | Paper Count |\n"
+    table_content += "| :--- | :---: |\n"
     
-    # 文件夹统计表格
-    stats_text += "### 📂 Folder Statistics\n| Folder | Papers Count |\n| :--- | :---: |\n"
-    for folder, count in sorted(folder_stats.items()):
-        stats_text += f"| `{folder}` | {count} |\n"
+    # 按文件夹名称排序
+    for folder in sorted(stats.keys()):
+        table_content += f"| `{folder}` | {stats[folder]} |\n"
     
-    # 会议统计表格
-    stats_text += "\n### 🏆 Conference Distribution\n| Venue | Count |\n| :--- | :---: |\n"
-    for conf, count in conf_stats.most_common():
-        stats_text += f"| **{conf}** | {count} |\n"
-    
-    stats_text += "\n<!-- STATS_END -->"
+    table_content += "<!-- STATS_END -->"
 
-    # 使用正则替换 README 中的旧统计块
+    # 替换占位符之间的内容
     new_content = re.sub(
         r"<!-- STATS_START -->.*?<!-- STATS_END -->",
-        stats_text,
+        table_content,
         content,
         flags=re.DOTALL
     )
 
     with open("README.md", "w", encoding="utf-8") as f:
         f.write(new_content)
-    print("✅ README statistics updated successfully!")
+    print(f"✅ 统计完成！共发现 {total} 篇论文，README 已更新。")
 
 if __name__ == "__main__":
-    f_stats, c_stats = get_paper_info()
-    update_readme(f_stats, c_stats)
+    stats, total = count_papers()
+    update_readme(stats, total)
